@@ -1,0 +1,10 @@
+{
+  "id": "cola",
+  "name": "Cola",
+  "version": "0.3.0",
+  "minAppVersion": "1.0.0",
+  "description": "Chat with Cola AI in Obsidian with full file context awareness.",
+  "author": "Heran",
+  "authorUrl": "https://github.com/heran11011",
+  "isDesktopOnly": true
+}
