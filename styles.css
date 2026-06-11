@@ -382,4 +382,4 @@
 }
 
 /* ─── Utility ─── */
-.cola-hidden { display: none !important; }
+.cola-chat-container .cola-hidden { display: none; }
