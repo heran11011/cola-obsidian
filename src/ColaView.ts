@@ -1,6 +1,6 @@
-import { ItemView, WorkspaceLeaf, MarkdownRenderer } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon } from "obsidian";
 import type ColaPlugin from "./main";
-import { ICON_COPY, ICON_CHECK, ICON_SEND, ICON_PAPERCLIP, ICON_FILE, ICON_STOP, ICON_INSERT } from "./icons";
+import { ICON_SEND, ICON_STOP } from "./icons";
 
 export const VIEW_TYPE_COLA = "cola-chat-view";
 
@@ -41,7 +41,7 @@ export class ColaView extends ItemView {
     return "message-circle";
   }
 
-  async onOpen() {
+  async onOpen(): Promise<void> {
     const container = this.contentEl;
     container.empty();
     container.addClass("cola-chat-root");
@@ -60,7 +60,11 @@ export class ColaView extends ItemView {
       cls: "cola-context-toggle cola-context-on",
       attr: { title: "点击切换：是否附带当前文件内容" },
     });
-    this.contextToggle.innerHTML = `${ICON_PAPERCLIP} <span class="cola-context-label">附带文件</span>`;
+    // Build context toggle content with DOM API
+    const clipIcon = this.contextToggle.createEl("span", { cls: "cola-toggle-icon" });
+    setIcon(clipIcon, "paperclip");
+    this.contextToggle.createEl("span", { cls: "cola-context-label", text: "附带文件" });
+
     this.contextToggle.addEventListener("click", () => {
       this.contextEnabled = !this.contextEnabled;
       const label = this.contextToggle.querySelector(".cola-context-label");
@@ -87,24 +91,22 @@ export class ColaView extends ItemView {
     this.sendBtn = inputWrapper.createEl("button", {
       cls: "cola-send-btn cola-send-btn-inactive",
     });
-    this.sendBtn.innerHTML = ICON_SEND;
+    this.setSendBtnIcon(ICON_SEND);
 
     // Input auto-resize
     this.inputEl.addEventListener("input", () => {
-      this.inputEl.style.height = "auto";
-      const newHeight = Math.min(this.inputEl.scrollHeight, 120);
-      this.inputEl.style.height = newHeight + "px";
+      this.autoResizeInput();
       this.updateSendBtnState();
     });
 
     // Event listeners
     this.sendBtn.addEventListener("click", () => {
-      if (this.isLoading) return; // No action during loading
+      if (this.isLoading) return;
       this.handleSend();
     });
-    this.inputEl.addEventListener("keydown", (e) => {
-      // Ignore Enter during IME composition (Chinese/Japanese input)
-      if (e.isComposing || e.keyCode === 229) return;
+    this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+      // Ignore Enter during IME composition
+      if (e.isComposing) return;
 
       const shortcut = this.plugin.settings.sendShortcut;
       if (shortcut === "ctrl+enter") {
@@ -133,7 +135,7 @@ export class ColaView extends ItemView {
       // Execute any actions from Cola
       if (actions && actions.length > 0) {
         for (const action of actions) {
-          this.plugin.executeAction(action);
+          void this.plugin.executeAction(action);
         }
       }
     });
@@ -144,27 +146,25 @@ export class ColaView extends ItemView {
     });
 
     // Restore saved messages
-    this.loadMessages();
+    await this.loadMessages();
   }
 
-  async onClose() {
+  async onClose(): Promise<void> {
     this.saveMessages();
   }
 
-  clearChat() {
+  clearChat(): void {
     this.messages = [];
     this.chatContainer.empty();
     this.saveMessages();
   }
 
   /** Send text directly as a message (from selection command) */
-  sendText(text: string) {
+  sendText(text: string): void {
     if (this.isLoading) {
-      // Queue in input box if busy
       this.fillInput(text);
       return;
     }
-    const context = this.contextEnabled ? null : null; // Don't attach file context for selection sends
     const sent = this.plugin.gateway.send(text, null);
     if (!sent) return;
     this.addMessage("user", text);
@@ -172,17 +172,15 @@ export class ColaView extends ItemView {
   }
 
   /** Fill input box with text (user can edit before sending) */
-  fillInput(text: string) {
+  fillInput(text: string): void {
     this.inputEl.value = text;
-    this.inputEl.style.height = "auto";
-    const newHeight = Math.min(this.inputEl.scrollHeight, 120);
-    this.inputEl.style.height = newHeight + "px";
+    this.autoResizeInput();
     this.inputEl.focus();
     this.updateSendBtnState();
   }
 
   /** Show selected text as a quote reference above input */
-  quoteSelection(text: string) {
+  quoteSelection(text: string): void {
     this.quotedText = text;
     this.quoteEl.empty();
     const quoteContent = this.quoteEl.createEl("div", { cls: "cola-quote-content" });
@@ -195,14 +193,20 @@ export class ColaView extends ItemView {
     this.updateSendBtnState();
   }
 
-  private clearQuote() {
+  private clearQuote(): void {
     this.quotedText = null;
     this.quoteEl.addClass("cola-hidden");
     this.quoteEl.empty();
     this.inputEl.setAttribute("placeholder", "输入消息...");
   }
 
-  private async handleSend() {
+  private autoResizeInput(): void {
+    this.inputEl.setCssStyles({ height: "auto" });
+    const newHeight = Math.min(this.inputEl.scrollHeight, 120);
+    this.inputEl.setCssStyles({ height: `${newHeight}px` });
+  }
+
+  private async handleSend(): Promise<void> {
     const text = this.inputEl.value.trim();
     if ((!text && !this.quotedText) || this.isLoading) return;
 
@@ -223,7 +227,7 @@ export class ColaView extends ItemView {
     if (!sent) return;
 
     this.inputEl.value = "";
-    this.inputEl.style.height = "auto";
+    this.inputEl.setCssStyles({ height: "auto" });
     this.addMessage("user", displayMessage);
     this.setLoading(true);
   }
@@ -243,14 +247,14 @@ export class ColaView extends ItemView {
     }
   }
 
-  private addMessage(role: "user" | "assistant", content: string) {
+  private addMessage(role: "user" | "assistant", content: string): void {
     this.messages.push({ role, content, timestamp: Date.now() });
     this.renderMessage(role, content);
     this.saveMessages();
     this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
   }
 
-  private renderMessage(role: "user" | "assistant", content: string) {
+  private renderMessage(role: "user" | "assistant", content: string): void {
     const msgWrapper = this.chatContainer.createEl("div", {
       cls: `cola-msg-wrapper cola-msg-wrapper-${role}`,
     });
@@ -263,7 +267,7 @@ export class ColaView extends ItemView {
 
     if (role === "assistant") {
       // Render Markdown for assistant
-      MarkdownRenderer.render(this.app, content, contentEl, "", this);
+      void MarkdownRenderer.render(this.app, content, contentEl, "", this);
 
       // Add copy buttons to code blocks
       const codeBlocks = contentEl.querySelectorAll("pre > code");
@@ -272,11 +276,12 @@ export class ColaView extends ItemView {
         if (!pre) return;
         pre.addClass("cola-code-block");
         const copyBtn = pre.createEl("button", { cls: "cola-code-copy-btn" });
-        copyBtn.innerHTML = ICON_COPY;
+        setIcon(copyBtn, "copy");
         copyBtn.addEventListener("click", () => {
-          navigator.clipboard.writeText(codeEl.textContent || "");
-          copyBtn.innerHTML = ICON_CHECK;
-          setTimeout(() => { copyBtn.innerHTML = ICON_COPY; }, 1500);
+          void navigator.clipboard.writeText(codeEl.textContent ?? "");
+          copyBtn.empty();
+          setIcon(copyBtn, "check");
+          window.setTimeout(() => { copyBtn.empty(); setIcon(copyBtn, "copy"); }, 1500);
         });
       });
     } else {
@@ -292,11 +297,12 @@ export class ColaView extends ItemView {
       cls: "cola-msg-action-btn",
       attr: { title: "复制" },
     });
-    copyMsgBtn.innerHTML = ICON_COPY;
+    setIcon(copyMsgBtn, "copy");
     copyMsgBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(content);
-      copyMsgBtn.innerHTML = ICON_CHECK;
-      setTimeout(() => { copyMsgBtn.innerHTML = ICON_COPY; }, 1500);
+      void navigator.clipboard.writeText(content);
+      copyMsgBtn.empty();
+      setIcon(copyMsgBtn, "check");
+      window.setTimeout(() => { copyMsgBtn.empty(); setIcon(copyMsgBtn, "copy"); }, 1500);
     });
 
     // Insert button (assistant messages only)
@@ -305,20 +311,31 @@ export class ColaView extends ItemView {
         cls: "cola-msg-action-btn",
         attr: { title: "插入到编辑器" },
       });
-      insertBtn.innerHTML = ICON_INSERT;
+      setIcon(insertBtn, "arrow-down-to-line");
       insertBtn.addEventListener("click", () => {
         this.plugin.insertAtCursor(content);
-        insertBtn.innerHTML = ICON_CHECK;
-        setTimeout(() => { insertBtn.innerHTML = ICON_INSERT; }, 1500);
+        insertBtn.empty();
+        setIcon(insertBtn, "check");
+        window.setTimeout(() => { insertBtn.empty(); setIcon(insertBtn, "arrow-down-to-line"); }, 1500);
       });
     }
   }
 
-  private setLoading(loading: boolean) {
+  private setSendBtnIcon(svgContent: string): void {
+    this.sendBtn.empty();
+    const temp = document.createElement("span");
+    temp.innerHTML = svgContent;
+    const svgEl = temp.firstElementChild;
+    if (svgEl) {
+      this.sendBtn.appendChild(svgEl);
+    }
+  }
+
+  private setLoading(loading: boolean): void {
     this.isLoading = loading;
 
     if (loading) {
-      this.sendBtn.innerHTML = ICON_STOP;
+      this.setSendBtnIcon(ICON_STOP);
       this.sendBtn.addClass("cola-send-btn-loading");
       this.sendBtn.removeClass("cola-send-btn-inactive");
       this.sendBtn.disabled = true;
@@ -338,53 +355,58 @@ export class ColaView extends ItemView {
     }
   }
 
-  private updateSendBtnState() {
+  private updateSendBtnState(): void {
     if (this.isLoading) return;
     const hasContent = this.inputEl.value.trim().length > 0 || this.quotedText !== null;
-    this.sendBtn.innerHTML = ICON_SEND;
+    this.setSendBtnIcon(ICON_SEND);
     this.sendBtn.disabled = !hasContent;
     this.sendBtn.toggleClass("cola-send-btn-inactive", !hasContent);
     this.sendBtn.toggleClass("cola-send-btn-loading", false);
   }
 
-  private updateFileInfo() {
+  private updateFileInfo(): void {
     const file = this.app.workspace.getActiveFile();
+    this.fileInfoEl.empty();
     if (file) {
-      this.fileInfoEl.innerHTML = `${ICON_FILE} ${file.basename}`;
+      const fileIcon = this.fileInfoEl.createEl("span", { cls: "cola-file-icon" });
+      setIcon(fileIcon, "file-text");
+      this.fileInfoEl.createEl("span", { text: file.basename });
       this.fileInfoEl.title = file.path;
     } else {
       this.fileInfoEl.setText("无打开文件");
     }
   }
 
-  private updateStatus(connected: boolean, message?: string) {
+  private updateStatus(connected: boolean, message?: string): void {
     if (connected) {
       this.statusEl.setText("●");
       this.statusEl.title = "已连接";
     } else {
       this.statusEl.setText("○");
-      this.statusEl.title = message || "未连接";
+      this.statusEl.title = message ?? "未连接";
     }
     this.statusEl.toggleClass("cola-status-connected", connected);
     this.statusEl.toggleClass("cola-status-disconnected", !connected);
   }
 
-  private saveMessages() {
-    this.plugin.saveData({ messages: this.messages, settings: this.plugin.settings });
+  private saveMessages(): void {
+    void this.plugin.saveData({ messages: this.messages, settings: this.plugin.settings });
   }
 
-  private async loadMessages() {
+  private async loadMessages(): Promise<void> {
     try {
-      const data = await this.plugin.loadData();
+      const data = await this.plugin.loadData() as { messages?: ChatMessage[] } | null;
       if (data?.messages && Array.isArray(data.messages)) {
         this.messages = data.messages;
         for (const msg of this.messages) {
           this.renderMessage(msg.role, msg.content);
         }
-        setTimeout(() => {
+        window.setTimeout(() => {
           this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
         }, 50);
       }
-    } catch {}
+    } catch {
+      // ignore load errors
+    }
   }
 }

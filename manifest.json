@@ -1,7 +1,7 @@
 {
   "id": "cola",
   "name": "Cola",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "minAppVersion": "1.0.0",
   "description": "Chat with Cola AI directly in your notes with full file context awareness.",
   "author": "Heran",

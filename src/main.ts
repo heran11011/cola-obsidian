@@ -12,50 +12,50 @@ const DEFAULT_SETTINGS: ColaSettings = {
 
 export default class ColaPlugin extends Plugin {
   gateway!: ColaGateway;
-  settings!: ColaSettings;
+  declare settings: ColaSettings;
 
-  async onload() {
+  async onload(): Promise<void> {
     await this.loadSettings();
     this.gateway = new ColaGateway(this);
 
     this.registerView(VIEW_TYPE_COLA, (leaf) => new ColaView(leaf, this));
 
     this.addRibbonIcon("message-circle", "Open Cola", () => {
-      this.activateView();
+      void this.activateView();
     });
 
     // Command: Open Cola Chat
     this.addCommand({
-      id: "open-cola-chat",
-      name: "打开 Cola 对话",
-      callback: () => this.activateView(),
+      id: "open-chat",
+      name: "打开对话",
+      callback: () => { void this.activateView(); },
     });
 
-    // Command: Quote selection to Cola (like VS Code inline chat)
+    // Command: Quote selection to Cola
     this.addCommand({
-      id: "quote-selection-to-cola",
-      name: "引用选中文本到 Cola",
+      id: "quote-selection",
+      name: "引用选中文本",
       editorCallback: (editor) => {
         const selection = editor.getSelection();
         if (!selection) {
           new Notice("没有选中文本");
           return;
         }
-        this.quoteSelectionToCola(selection);
+        void this.quoteSelectionToCola(selection);
       },
     });
 
     // Command: Send selection directly
     this.addCommand({
-      id: "send-selection-to-cola",
-      name: "将选中文本直接发送给 Cola",
+      id: "send-selection",
+      name: "将选中文本直接发送",
       editorCallback: (editor) => {
         const selection = editor.getSelection();
         if (!selection) {
           new Notice("没有选中文本");
           return;
         }
-        this.sendSelectionToCola(selection);
+        void this.sendSelectionToCola(selection);
       },
     });
 
@@ -69,7 +69,7 @@ export default class ColaPlugin extends Plugin {
     this.gateway.connect();
   }
 
-  async onunload() {
+  async onunload(): Promise<void> {
     this.gateway.disconnect();
   }
 
@@ -89,13 +89,13 @@ export default class ColaPlugin extends Plugin {
     }
 
     if (leaves.length > 0 && leaves[0].view instanceof ColaView) {
-      return leaves[0].view as ColaView;
+      return leaves[0].view;
     }
     return null;
   }
 
   /** Quote selection in Cola sidebar (user adds question below) */
-  async quoteSelectionToCola(text: string) {
+  async quoteSelectionToCola(text: string): Promise<void> {
     const view = await this.activateView();
     if (view) {
       view.quoteSelection(text);
@@ -103,7 +103,7 @@ export default class ColaPlugin extends Plugin {
   }
 
   /** Send selection directly to Cola as a message */
-  async sendSelectionToCola(text: string) {
+  async sendSelectionToCola(text: string): Promise<void> {
     const view = await this.activateView();
     if (view) {
       view.sendText(text);
@@ -111,8 +111,8 @@ export default class ColaPlugin extends Plugin {
   }
 
   /** Insert text at cursor in the most recent markdown editor */
-  insertAtCursor(text: string) {
-    // Find the most recent MarkdownView (not necessarily active, since user clicked sidebar)
+  insertAtCursor(text: string): void {
+    // Find the most recent MarkdownView
     let mdView: MarkdownView | null = null;
 
     // Try active first
@@ -122,7 +122,6 @@ export default class ColaPlugin extends Plugin {
     if (!mdView) {
       const leaves = this.app.workspace.getLeavesOfType("markdown");
       if (leaves.length > 0) {
-        // Get the most recently active one
         const leaf = leaves[leaves.length - 1];
         if (leaf.view instanceof MarkdownView) {
           mdView = leaf.view;
@@ -151,7 +150,7 @@ export default class ColaPlugin extends Plugin {
   }
 
   /** Send vault file structure to Cola */
-  sendVaultInfo() {
+  sendVaultInfo(): void {
     const files: string[] = [];
     const walkFolder = (folder: TFolder) => {
       for (const child of folder.children) {
@@ -171,7 +170,7 @@ export default class ColaPlugin extends Plugin {
   }
 
   /** Execute a Cola action on the vault */
-  async executeAction(action: { type: string; path?: string; content?: string; query?: string }) {
+  async executeAction(action: { type: string; path?: string; content?: string; query?: string }): Promise<void> {
     switch (action.type) {
       case "openFile": {
         if (!action.path) return;
@@ -183,9 +182,10 @@ export default class ColaPlugin extends Plugin {
         } else {
           // Try fuzzy match
           const allFiles = this.app.vault.getFiles();
+          const targetPath = action.path.toLowerCase();
           const match = allFiles.find(f =>
-            f.path.toLowerCase().includes(action.path!.toLowerCase()) ||
-            f.basename.toLowerCase().includes(action.path!.toLowerCase())
+            f.path.toLowerCase().includes(targetPath) ||
+            f.basename.toLowerCase().includes(targetPath)
           );
           if (match) {
             const leaf = this.app.workspace.getLeaf();
@@ -199,14 +199,14 @@ export default class ColaPlugin extends Plugin {
       }
       case "createFile": {
         if (!action.path) return;
-        const content = action.content || "";
+        const content = action.content ?? "";
         try {
           const newFile = await this.app.vault.create(action.path, content);
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(newFile);
           this.app.workspace.revealLeaf(leaf);
           new Notice(`已创建: ${action.path}`);
-        } catch (e) {
+        } catch {
           new Notice(`创建文件失败: ${action.path}`);
         }
         break;
@@ -234,8 +234,8 @@ export default class ColaPlugin extends Plugin {
     }
   }
 
-  async clearChatHistory() {
-    const data = await this.loadData();
+  async clearChatHistory(): Promise<void> {
+    const data = await this.loadData() as Record<string, unknown> | null;
     await this.saveData({ ...data, messages: [] });
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_COLA);
     for (const leaf of leaves) {
@@ -246,13 +246,13 @@ export default class ColaPlugin extends Plugin {
     new Notice("聊天记录已清除（Cola 的记忆不受影响）");
   }
 
-  async loadSettings() {
-    const data = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings || {});
+  async loadSettings(): Promise<void> {
+    const data = await this.loadData() as { settings?: ColaSettings } | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings ?? {});
   }
 
-  async saveSettings() {
-    const data = (await this.loadData()) || {};
+  async saveSettings(): Promise<void> {
+    const data = (await this.loadData() as Record<string, unknown> | null) ?? {};
     data.settings = this.settings;
     await this.saveData(data);
   }
@@ -270,7 +270,7 @@ class ColaSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Cola 插件设置" });
+    new Setting(containerEl).setName("Cola 插件设置").setHeading();
 
     new Setting(containerEl)
       .setName("发送快捷键")
@@ -286,38 +286,38 @@ class ColaSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl("h3", { text: "快捷键" });
+    new Setting(containerEl).setName("快捷键").setHeading();
 
     containerEl.createEl("p", {
-      text: "所有快捷键均可在 Obsidian 设置 → 快捷键 中搜索 \"Cola\" 进行自定义。",
+      text: "所有快捷键均可在设置 → 快捷键中搜索 \"Cola\" 进行自定义。",
       cls: "setting-item-description",
     });
 
     const hotkeyList = containerEl.createEl("div", { cls: "cola-hotkey-list" });
     const commands = [
-      { name: "打开 Cola 对话", id: "open-cola-chat" },
-      { name: "引用选中文本到 Cola", id: "quote-selection-to-cola" },
-      { name: "将选中文本直接发送给 Cola", id: "send-selection-to-cola" },
+      { name: "打开对话", id: "open-chat" },
+      { name: "引用选中文本", id: "quote-selection" },
+      { name: "将选中文本直接发送", id: "send-selection" },
     ];
     for (const cmd of commands) {
       const item = hotkeyList.createEl("div", { cls: "cola-hotkey-item" });
       item.createEl("span", { text: cmd.name, cls: "cola-hotkey-name" });
-      item.createEl("span", { text: `obsidian-cola:${cmd.id}`, cls: "cola-hotkey-id" });
+      item.createEl("code", { text: `cola:${cmd.id}`, cls: "cola-hotkey-id" });
     }
 
-    containerEl.createEl("h3", { text: "数据" });
+    new Setting(containerEl).setName("数据").setHeading();
 
     new Setting(containerEl)
       .setName("清除聊天记录")
-      .setDesc("仅清除 Obsidian 侧边栏中的对话记录。Cola 的记忆和上下文不会受到影响。")
-      .addButton((btn) =>
+      .setDesc("仅清除侧边栏中的对话记录。Cola 的记忆和上下文不会受到影响。")
+      .addButton((btn) => {
         btn
           .setButtonText("清除")
           .setWarning()
           .onClick(async () => {
             await this.plugin.clearChatHistory();
-          })
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("连接状态")

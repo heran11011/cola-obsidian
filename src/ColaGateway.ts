@@ -1,6 +1,6 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { Notice } from "obsidian";
 import type ColaPlugin from "./main";
 
@@ -23,7 +23,7 @@ export class ColaGateway {
   private messageHandler: MessageHandler | null = null;
   private statusHandler: StatusHandler | null = null;
   private connectedHandler: ConnectedHandler | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: number | null = null;
   private port: number = DEFAULT_PORT;
   private intentionalClose = false;
   private reconnectAttempts = 0;
@@ -34,7 +34,7 @@ export class ColaGateway {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
-  connect() {
+  connect(): void {
     this.intentionalClose = false;
     try {
       // Always re-read token on connect (fixes token change after Cola restart)
@@ -52,14 +52,19 @@ export class ColaGateway {
         this.reconnectAttempts = 0;
         this.notifyStatus(true);
         if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
+          window.clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
         }
       };
 
-      this.ws.onmessage = (event) => {
+      this.ws.onmessage = (event: MessageEvent) => {
         try {
-          const data = JSON.parse(String(event.data));
+          const data = JSON.parse(String(event.data)) as {
+            type: string;
+            connId?: string;
+            text?: string;
+            actions?: ColaAction[];
+          };
 
           if (data.type === "connected") {
             console.log("[Cola] Authenticated, connId:", data.connId);
@@ -68,14 +73,14 @@ export class ColaGateway {
           }
 
           if (data.type === "reply" && this.messageHandler) {
-            this.messageHandler(data.text, data.actions);
+            this.messageHandler(data.text ?? "", data.actions);
           }
         } catch (e) {
           console.error("[Cola] Failed to parse message:", e);
         }
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = (event: CloseEvent) => {
         this.ws = null;
         if (!this.intentionalClose) {
           const reason = event.code === 4001 ? "认证失败，正在重试..." : "连接断开，正在重连...";
@@ -97,10 +102,10 @@ export class ColaGateway {
     }
   }
 
-  disconnect() {
+  disconnect(): void {
     this.intentionalClose = true;
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+      window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
@@ -126,20 +131,20 @@ export class ColaGateway {
     return true;
   }
 
-  onMessage(handler: MessageHandler) {
+  onMessage(handler: MessageHandler): void {
     this.messageHandler = handler;
   }
 
-  onStatus(handler: StatusHandler) {
+  onStatus(handler: StatusHandler): void {
     this.statusHandler = handler;
   }
 
-  onConnected(handler: ConnectedHandler) {
+  onConnected(handler: ConnectedHandler): void {
     this.connectedHandler = handler;
   }
 
   /** Send vault file list to Cola after connection */
-  sendVaultInfo(vaultName: string, files: string[]) {
+  sendVaultInfo(vaultName: string, files: string[]): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({
       type: "vault-info",
@@ -149,7 +154,7 @@ export class ColaGateway {
     }));
   }
 
-  private notifyStatus(connected: boolean, message?: string) {
+  private notifyStatus(connected: boolean, message?: string): void {
     if (this.statusHandler) {
       this.statusHandler(connected, message);
     }
@@ -164,12 +169,12 @@ export class ColaGateway {
     }
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(): void {
     if (this.reconnectTimer || this.intentionalClose) return;
     this.reconnectAttempts++;
     // Exponential backoff: 3s, 6s, 12s, max 30s
     const delay = Math.min(3000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
