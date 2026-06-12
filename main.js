@@ -103,7 +103,7 @@ var ColaView = class extends import_obsidian.ItemView {
     });
     this.sendBtn.addEventListener("click", () => {
       if (this.isLoading) return;
-      this.handleSend();
+      void this.handleSend();
     });
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
@@ -111,12 +111,12 @@ var ColaView = class extends import_obsidian.ItemView {
       if (shortcut === "ctrl+enter") {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
-          this.handleSend();
+          void this.handleSend();
         }
       } else {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          this.handleSend();
+          void this.handleSend();
         }
       }
     });
@@ -289,11 +289,11 @@ ${text}`;
   }
   setSendBtnIcon(svgContent) {
     this.sendBtn.empty();
-    const temp = document.createElement("span");
-    temp.innerHTML = svgContent;
-    const svgEl = temp.firstElementChild;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, "image/svg+xml");
+    const svgEl = doc.documentElement;
     if (svgEl) {
-      this.sendBtn.appendChild(svgEl);
+      this.sendBtn.appendChild(activeDocument.importNode(svgEl, true));
     }
   }
   setLoading(loading) {
@@ -561,7 +561,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
     });
     this.gateway.connect();
   }
-  async onunload() {
+  onunload() {
     this.gateway.disconnect();
   }
   async activateView() {
@@ -571,11 +571,11 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
       const leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({ type: VIEW_TYPE_COLA, active: true });
-        workspace.revealLeaf(leaf);
+        void workspace.revealLeaf(leaf);
         leaves = workspace.getLeavesOfType(VIEW_TYPE_COLA);
       }
     } else {
-      workspace.revealLeaf(leaves[0]);
+      void workspace.revealLeaf(leaves[0]);
     }
     if (leaves.length > 0 && leaves[0].view instanceof ColaView) {
       return leaves[0].view;
@@ -623,7 +623,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
     } else {
       editor.setCursor({ line: cursor.line + lines.length - 1, ch: lastLine.length });
     }
-    this.app.workspace.revealLeaf(mdView.leaf);
+    void this.app.workspace.revealLeaf(mdView.leaf);
     new import_obsidian3.Notice("\u5DF2\u63D2\u5165");
   }
   /** Send vault file structure to Cola */
@@ -652,7 +652,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
         if (file instanceof import_obsidian3.TFile) {
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(file);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         } else {
           const allFiles = this.app.vault.getFiles();
           const targetPath = action.path.toLowerCase();
@@ -662,7 +662,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
           if (match) {
             const leaf = this.app.workspace.getLeaf();
             await leaf.openFile(match);
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
           } else {
             new import_obsidian3.Notice(`\u627E\u4E0D\u5230\u6587\u4EF6: ${action.path}`);
           }
@@ -676,7 +676,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
           const newFile = await this.app.vault.create(action.path, content);
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(newFile);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
           new import_obsidian3.Notice(`\u5DF2\u521B\u5EFA: ${action.path}`);
         } catch {
           new import_obsidian3.Notice(`\u521B\u5EFA\u6587\u4EF6\u5931\u8D25: ${action.path}`);
@@ -693,7 +693,7 @@ var ColaPlugin = class extends import_obsidian3.Plugin {
         if (results.length === 1) {
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(results[0]);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         } else if (results.length > 1) {
           new import_obsidian3.Notice(`\u627E\u5230 ${results.length} \u4E2A\u6587\u4EF6: ${results.map((f) => f.basename).join(", ")}`);
         } else {
@@ -733,7 +733,7 @@ var ColaSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Cola \u63D2\u4EF6\u8BBE\u7F6E").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("\u8BBE\u7F6E").setHeading();
     new import_obsidian3.Setting(containerEl).setName("\u53D1\u9001\u5FEB\u6377\u952E").setDesc("\u9009\u62E9\u53D1\u9001\u6D88\u606F\u7684\u5FEB\u6377\u952E\u65B9\u5F0F").addDropdown(
       (dropdown) => dropdown.addOption("ctrl+enter", "Ctrl/Cmd + Enter").addOption("enter", "Enter\uFF08Shift+Enter \u6362\u884C\uFF09").setValue(this.plugin.settings.sendShortcut).onChange(async (value) => {
         this.plugin.settings.sendShortcut = value;
@@ -758,7 +758,7 @@ var ColaSettingTab = class extends import_obsidian3.PluginSettingTab {
     }
     new import_obsidian3.Setting(containerEl).setName("\u6570\u636E").setHeading();
     new import_obsidian3.Setting(containerEl).setName("\u6E05\u9664\u804A\u5929\u8BB0\u5F55").setDesc("\u4EC5\u6E05\u9664\u4FA7\u8FB9\u680F\u4E2D\u7684\u5BF9\u8BDD\u8BB0\u5F55\u3002Cola \u7684\u8BB0\u5FC6\u548C\u4E0A\u4E0B\u6587\u4E0D\u4F1A\u53D7\u5230\u5F71\u54CD\u3002").addButton((btn) => {
-      btn.setButtonText("\u6E05\u9664").setWarning().onClick(async () => {
+      btn.setButtonText("\u6E05\u9664").onClick(async () => {
         await this.plugin.clearChatHistory();
       });
     });

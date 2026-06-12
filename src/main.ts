@@ -69,7 +69,7 @@ export default class ColaPlugin extends Plugin {
     this.gateway.connect();
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     this.gateway.disconnect();
   }
 
@@ -81,11 +81,11 @@ export default class ColaPlugin extends Plugin {
       const leaf = workspace.getRightLeaf(false);
       if (leaf) {
         await leaf.setViewState({ type: VIEW_TYPE_COLA, active: true });
-        workspace.revealLeaf(leaf);
+        void workspace.revealLeaf(leaf);
         leaves = workspace.getLeavesOfType(VIEW_TYPE_COLA);
       }
     } else {
-      workspace.revealLeaf(leaves[0]);
+      void workspace.revealLeaf(leaves[0]);
     }
 
     if (leaves.length > 0 && leaves[0].view instanceof ColaView) {
@@ -145,7 +145,7 @@ export default class ColaPlugin extends Plugin {
       editor.setCursor({ line: cursor.line + lines.length - 1, ch: lastLine.length });
     }
     // Focus the editor after insert
-    this.app.workspace.revealLeaf(mdView.leaf);
+    void this.app.workspace.revealLeaf(mdView.leaf);
     new Notice("已插入");
   }
 
@@ -178,7 +178,7 @@ export default class ColaPlugin extends Plugin {
         if (file instanceof TFile) {
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(file);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         } else {
           // Try fuzzy match
           const allFiles = this.app.vault.getFiles();
@@ -190,7 +190,7 @@ export default class ColaPlugin extends Plugin {
           if (match) {
             const leaf = this.app.workspace.getLeaf();
             await leaf.openFile(match);
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
           } else {
             new Notice(`找不到文件: ${action.path}`);
           }
@@ -204,7 +204,7 @@ export default class ColaPlugin extends Plugin {
           const newFile = await this.app.vault.create(action.path, content);
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(newFile);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
           new Notice(`已创建: ${action.path}`);
         } catch {
           new Notice(`创建文件失败: ${action.path}`);
@@ -223,7 +223,7 @@ export default class ColaPlugin extends Plugin {
         if (results.length === 1) {
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(results[0]);
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         } else if (results.length > 1) {
           new Notice(`找到 ${results.length} 个文件: ${results.map(f => f.basename).join(", ")}`);
         } else {
@@ -270,7 +270,7 @@ class ColaSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Cola 插件设置").setHeading();
+    new Setting(containerEl).setName("设置").setHeading();
 
     new Setting(containerEl)
       .setName("发送快捷键")
@@ -313,7 +313,6 @@ class ColaSettingTab extends PluginSettingTab {
       .addButton((btn) => {
         btn
           .setButtonText("清除")
-          .setWarning()
           .onClick(async () => {
             await this.plugin.clearChatHistory();
           });

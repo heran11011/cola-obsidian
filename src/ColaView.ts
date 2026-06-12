@@ -102,7 +102,7 @@ export class ColaView extends ItemView {
     // Event listeners
     this.sendBtn.addEventListener("click", () => {
       if (this.isLoading) return;
-      this.handleSend();
+      void this.handleSend();
     });
     this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
       // Ignore Enter during IME composition
@@ -112,12 +112,12 @@ export class ColaView extends ItemView {
       if (shortcut === "ctrl+enter") {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
-          this.handleSend();
+          void this.handleSend();
         }
       } else {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          this.handleSend();
+          void this.handleSend();
         }
       }
     });
@@ -323,11 +323,11 @@ export class ColaView extends ItemView {
 
   private setSendBtnIcon(svgContent: string): void {
     this.sendBtn.empty();
-    const temp = document.createElement("span");
-    temp.innerHTML = svgContent;
-    const svgEl = temp.firstElementChild;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, "image/svg+xml");
+    const svgEl = doc.documentElement;
     if (svgEl) {
-      this.sendBtn.appendChild(svgEl);
+      this.sendBtn.appendChild(activeDocument.importNode(svgEl, true));
     }
   }
 
