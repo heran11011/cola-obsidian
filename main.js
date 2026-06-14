@@ -33,6 +33,7 @@ var ICON_STOP = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" 
 
 // src/ColaView.ts
 var VIEW_TYPE_COLA = "cola-chat-view";
+var PAGE_SIZE = 50;
 var ColaView = class extends import_obsidian.ItemView {
   plugin;
   messages = [];
@@ -46,6 +47,15 @@ var ColaView = class extends import_obsidian.ItemView {
   isLoading = false;
   quoteEl;
   quotedText = null;
+  renderedCount = 0;
+  searchEl;
+  searchInputEl;
+  searchCountEl;
+  searchPrevBtn;
+  searchNextBtn;
+  isSearching = false;
+  searchMatches = [];
+  searchCurrentIdx = -1;
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -85,7 +95,47 @@ var ColaView = class extends import_obsidian.ItemView {
       this.contextToggle.toggleClass("cola-context-off", !this.contextEnabled);
     });
     this.updateFileInfo();
+    this.searchEl = container.createEl("div", { cls: "cola-search-bar cola-hidden" });
+    this.searchInputEl = this.searchEl.createEl("input", {
+      attr: { placeholder: "\u641C\u7D22\u804A\u5929\u8BB0\u5F55...", type: "text" },
+      cls: "cola-search-input"
+    });
+    const searchNav = this.searchEl.createEl("div", { cls: "cola-search-nav" });
+    this.searchCountEl = searchNav.createEl("span", { cls: "cola-search-count" });
+    this.searchPrevBtn = searchNav.createEl("button", { cls: "cola-search-nav-btn", attr: { title: "\u4E0A\u4E00\u4E2A" } });
+    (0, import_obsidian.setIcon)(this.searchPrevBtn, "chevron-up");
+    this.searchNextBtn = searchNav.createEl("button", { cls: "cola-search-nav-btn", attr: { title: "\u4E0B\u4E00\u4E2A" } });
+    (0, import_obsidian.setIcon)(this.searchNextBtn, "chevron-down");
+    const searchCloseBtn = searchNav.createEl("button", { cls: "cola-search-nav-btn", attr: { title: "\u5173\u95ED" } });
+    (0, import_obsidian.setIcon)(searchCloseBtn, "x");
+    this.searchPrevBtn.addEventListener("click", () => this.navigateSearch(-1));
+    this.searchNextBtn.addEventListener("click", () => this.navigateSearch(1));
+    searchCloseBtn.addEventListener("click", () => this.toggleSearch(false));
+    this.searchInputEl.addEventListener("input", () => {
+      this.performSearch(this.searchInputEl.value.trim());
+    });
+    this.searchInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.toggleSearch(false);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        this.navigateSearch(e.shiftKey ? -1 : 1);
+      }
+    });
+    const searchBtn = header.createEl("button", {
+      cls: "cola-header-btn",
+      attr: { title: "\u641C\u7D22" }
+    });
+    (0, import_obsidian.setIcon)(searchBtn, "search");
+    searchBtn.addEventListener("click", () => {
+      this.toggleSearch(!this.isSearching);
+    });
     this.chatContainer = container.createEl("div", { cls: "cola-messages" });
+    this.chatContainer.addEventListener("scroll", () => {
+      if (this.chatContainer.scrollTop === 0 && this.renderedCount < this.messages.length && !this.isSearching) {
+        this.loadMoreMessages();
+      }
+    });
     const inputArea = container.createEl("div", { cls: "cola-input-area" });
     this.quoteEl = inputArea.createEl("div", { cls: "cola-quote-block cola-hidden" });
     const inputWrapper = inputArea.createEl("div", { cls: "cola-input-wrapper" });
@@ -220,12 +270,25 @@ ${text}`;
     }
   }
   addMessage(role, content) {
-    this.messages.push({ role, content, timestamp: Date.now() });
-    this.renderMessage(role, content);
+    const ts = Date.now();
+    this.messages.push({ role, content, timestamp: ts });
+    this.renderMessage(role, content, ts);
     this.saveMessages();
     this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
   }
-  renderMessage(role, content) {
+  formatTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const now = /* @__PURE__ */ new Date();
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    if (d.toDateString() === now.toDateString()) return hm;
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return `\u6628\u5929 ${hm}`;
+    if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  }
+  renderMessage(role, content, timestamp) {
     const msgWrapper = this.chatContainer.createEl("div", {
       cls: `cola-msg-wrapper cola-msg-wrapper-${role}`
     });
@@ -286,6 +349,12 @@ ${text}`;
         }, 1500);
       });
     }
+    if (timestamp) {
+      msgActions.createEl("span", {
+        cls: "cola-msg-time",
+        text: this.formatTime(timestamp)
+      });
+    }
   }
   setSendBtnIcon(svgContent) {
     this.sendBtn.empty();
@@ -306,7 +375,11 @@ ${text}`;
       const existing = this.chatContainer.querySelector(".cola-typing");
       if (!existing) {
         const typingEl = this.chatContainer.createEl("div", { cls: "cola-typing" });
-        typingEl.setText("Cola \u6B63\u5728\u601D\u8003...");
+        typingEl.createEl("span", { text: "Cola \u6B63\u5728\u601D\u8003" });
+        const dots = typingEl.createEl("span", { cls: "cola-typing-dots" });
+        dots.createEl("span", { cls: "cola-typing-dot" });
+        dots.createEl("span", { cls: "cola-typing-dot" });
+        dots.createEl("span", { cls: "cola-typing-dot" });
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
       }
     } else {
@@ -355,15 +428,178 @@ ${text}`;
       const data = await this.plugin.loadData();
       if (data?.messages && Array.isArray(data.messages)) {
         this.messages = data.messages;
-        for (const msg of this.messages) {
-          this.renderMessage(msg.role, msg.content);
+        const startIdx = Math.max(0, this.messages.length - PAGE_SIZE);
+        for (let i = startIdx; i < this.messages.length; i++) {
+          this.renderMessage(this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
         }
+        this.renderedCount = this.messages.length - startIdx;
         window.setTimeout(() => {
           this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
         }, 50);
       }
     } catch {
     }
+  }
+  loadMoreMessages() {
+    const totalUnrendered = this.messages.length - this.renderedCount;
+    if (totalUnrendered <= 0) return;
+    const loadCount = Math.min(PAGE_SIZE, totalUnrendered);
+    const startIdx = totalUnrendered - loadCount;
+    const prevHeight = this.chatContainer.scrollHeight;
+    const fragment = document.createDocumentFragment();
+    const tempContainer = document.createElement("div");
+    for (let i = startIdx; i < startIdx + loadCount; i++) {
+      this.renderMessageToContainer(tempContainer, this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
+    }
+    while (tempContainer.firstChild) {
+      fragment.appendChild(tempContainer.firstChild);
+    }
+    this.chatContainer.insertBefore(fragment, this.chatContainer.firstChild);
+    this.renderedCount += loadCount;
+    window.setTimeout(() => {
+      this.chatContainer.scrollTop = this.chatContainer.scrollHeight - prevHeight;
+    }, 0);
+  }
+  renderMessageToContainer(container, role, content, timestamp) {
+    const msgWrapper = container.createEl("div", {
+      cls: `cola-msg-wrapper cola-msg-wrapper-${role}`
+    });
+    const msgEl = msgWrapper.createEl("div", {
+      cls: `cola-msg cola-msg-${role}`
+    });
+    const contentEl = msgEl.createEl("div", { cls: "cola-msg-content" });
+    if (role === "assistant") {
+      void import_obsidian.MarkdownRenderer.render(this.app, content, contentEl, "", this);
+    } else {
+      contentEl.setText(content);
+    }
+    const msgActions = msgWrapper.createEl("div", { cls: "cola-msg-actions" });
+    const copyMsgBtn = msgActions.createEl("button", {
+      cls: "cola-msg-action-btn",
+      attr: { title: "\u590D\u5236" }
+    });
+    (0, import_obsidian.setIcon)(copyMsgBtn, "copy");
+    copyMsgBtn.addEventListener("click", () => {
+      void navigator.clipboard.writeText(content);
+      copyMsgBtn.empty();
+      (0, import_obsidian.setIcon)(copyMsgBtn, "check");
+      window.setTimeout(() => {
+        copyMsgBtn.empty();
+        (0, import_obsidian.setIcon)(copyMsgBtn, "copy");
+      }, 1500);
+    });
+    if (role === "assistant") {
+      const insertBtn = msgActions.createEl("button", {
+        cls: "cola-msg-action-btn",
+        attr: { title: "\u63D2\u5165\u5230\u7F16\u8F91\u5668" }
+      });
+      (0, import_obsidian.setIcon)(insertBtn, "arrow-down-to-line");
+      insertBtn.addEventListener("click", () => {
+        this.plugin.insertAtCursor(content);
+        insertBtn.empty();
+        (0, import_obsidian.setIcon)(insertBtn, "check");
+        window.setTimeout(() => {
+          insertBtn.empty();
+          (0, import_obsidian.setIcon)(insertBtn, "arrow-down-to-line");
+        }, 1500);
+      });
+    }
+    if (timestamp) {
+      msgActions.createEl("span", {
+        cls: "cola-msg-time",
+        text: this.formatTime(timestamp)
+      });
+    }
+  }
+  toggleSearch(show) {
+    this.isSearching = show;
+    this.searchEl.toggleClass("cola-hidden", !show);
+    if (show) {
+      this.searchInputEl.focus();
+    } else {
+      this.searchInputEl.value = "";
+      this.clearSearchHighlights();
+      this.searchMatches = [];
+      this.searchCurrentIdx = -1;
+      this.searchCountEl.setText("");
+      this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+    }
+  }
+  performSearch(query) {
+    this.clearSearchHighlights();
+    this.searchMatches = [];
+    this.searchCurrentIdx = -1;
+    if (!query) {
+      this.searchCountEl.setText("");
+      return;
+    }
+    const lowerQuery = query.toLowerCase();
+    for (let i = 0; i < this.messages.length; i++) {
+      if (this.messages[i].content.toLowerCase().includes(lowerQuery)) {
+        this.searchMatches.push(i);
+      }
+    }
+    if (this.searchMatches.length === 0) {
+      this.searchCountEl.setText("\u65E0\u7ED3\u679C");
+      return;
+    }
+    this.searchCurrentIdx = this.searchMatches.length - 1;
+    this.updateSearchCounter();
+    this.scrollToCurrentMatch();
+  }
+  navigateSearch(direction) {
+    if (this.searchMatches.length === 0) return;
+    this.searchCurrentIdx += direction;
+    if (this.searchCurrentIdx >= this.searchMatches.length) {
+      this.searchCurrentIdx = 0;
+    } else if (this.searchCurrentIdx < 0) {
+      this.searchCurrentIdx = this.searchMatches.length - 1;
+    }
+    this.updateSearchCounter();
+    this.scrollToCurrentMatch();
+  }
+  updateSearchCounter() {
+    if (this.searchMatches.length === 0) {
+      this.searchCountEl.setText("\u65E0\u7ED3\u679C");
+    } else {
+      this.searchCountEl.setText(`${this.searchCurrentIdx + 1}/${this.searchMatches.length}`);
+    }
+  }
+  scrollToCurrentMatch() {
+    if (this.searchCurrentIdx < 0 || this.searchMatches.length === 0) return;
+    const msgIndex = this.searchMatches[this.searchCurrentIdx];
+    this.ensureMessageRendered(msgIndex);
+    this.chatContainer.querySelectorAll(".cola-search-active").forEach((el) => {
+      el.removeClass("cola-search-active");
+    });
+    const currentStartIdx = this.messages.length - this.renderedCount;
+    const wrapperIndex = msgIndex - currentStartIdx;
+    const wrappers = this.chatContainer.querySelectorAll(".cola-msg-wrapper");
+    if (wrappers[wrapperIndex]) {
+      const target = wrappers[wrapperIndex];
+      target.addClass("cola-search-active");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+  ensureMessageRendered(msgIndex) {
+    const renderedStartIdx = this.messages.length - this.renderedCount;
+    if (msgIndex >= renderedStartIdx) return;
+    const newStart = Math.max(0, msgIndex - 10);
+    const fragment = document.createDocumentFragment();
+    const tempContainer = document.createElement("div");
+    for (let i = newStart; i < renderedStartIdx; i++) {
+      this.renderMessageToContainer(tempContainer, this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
+    }
+    while (tempContainer.firstChild) {
+      fragment.appendChild(tempContainer.firstChild);
+    }
+    this.chatContainer.insertBefore(fragment, this.chatContainer.firstChild);
+    this.renderedCount += renderedStartIdx - newStart;
+  }
+  clearSearchHighlights() {
+    this.chatContainer.querySelectorAll(".cola-search-active").forEach((el) => {
+      el.removeClass("cola-search-active");
+    });
   }
 };
 
