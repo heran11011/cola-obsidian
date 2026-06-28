@@ -28,7 +28,7 @@ var import_obsidian3 = require("obsidian");
 var import_obsidian = require("obsidian");
 
 // src/icons.ts
-var ICON_SEND = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>`;
+var ICON_SEND = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9l20-7z"/></svg>`;
 var ICON_STOP = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 
 // src/ColaView.ts
@@ -140,7 +140,7 @@ var ColaView = class extends import_obsidian.ItemView {
     this.quoteEl = inputArea.createEl("div", { cls: "cola-quote-block cola-hidden" });
     const inputWrapper = inputArea.createEl("div", { cls: "cola-input-wrapper" });
     this.inputEl = inputWrapper.createEl("textarea", {
-      attr: { placeholder: "\u8F93\u5165\u6D88\u606F...", rows: "1" },
+      attr: { placeholder: "\u95EE\u70B9\u4EC0\u4E48...", rows: "1" },
       cls: "cola-input"
     });
     this.sendBtn = inputWrapper.createEl("button", {
@@ -182,10 +182,20 @@ var ColaView = class extends import_obsidian.ItemView {
         }
       }
     });
+    let wasConnected = this.plugin.gateway.isConnected;
     this.plugin.gateway.onStatus((connected, message) => {
       this.updateStatus(connected, message);
+      if (!connected && wasConnected) {
+        this.renderSystemMessage("\u8FDE\u63A5\u5DF2\u65AD\u5F00\uFF0C\u6B63\u5728\u91CD\u8FDE\u2026", "disconnected");
+      } else if (connected && !wasConnected) {
+        this.renderSystemMessage("\u5DF2\u91CD\u65B0\u8FDE\u63A5", "reconnected");
+      }
+      wasConnected = connected;
     });
     await this.loadMessages();
+    if (this.messages.length === 0) {
+      this.showEmptyState();
+    }
   }
   async onClose() {
     this.saveMessages();
@@ -270,7 +280,14 @@ ${text}`;
     }
   }
   addMessage(role, content) {
+    this.removeEmptyState();
     const ts = Date.now();
+    if (this.messages.length > 0) {
+      const prevTs = this.messages[this.messages.length - 1].timestamp;
+      if (this.shouldShowTimeSeparator(prevTs, ts)) {
+        this.renderTimeSeparator(ts);
+      }
+    }
     this.messages.push({ role, content, timestamp: ts });
     this.renderMessage(role, content, ts);
     this.saveMessages();
@@ -375,7 +392,7 @@ ${text}`;
       const existing = this.chatContainer.querySelector(".cola-typing");
       if (!existing) {
         const typingEl = this.chatContainer.createEl("div", { cls: "cola-typing" });
-        typingEl.createEl("span", { text: "Cola \u6B63\u5728\u601D\u8003" });
+        typingEl.createEl("span", { text: "\u601D\u8003\u4E2D" });
         const dots = typingEl.createEl("span", { cls: "cola-typing-dots" });
         dots.createEl("span", { cls: "cola-typing-dot" });
         dots.createEl("span", { cls: "cola-typing-dot" });
@@ -410,15 +427,57 @@ ${text}`;
     }
   }
   updateStatus(connected, message) {
-    if (connected) {
-      this.statusEl.setText("\u25CF");
-      this.statusEl.title = "\u5DF2\u8FDE\u63A5";
-    } else {
-      this.statusEl.setText("\u25CB");
-      this.statusEl.title = message ?? "\u672A\u8FDE\u63A5";
-    }
+    this.statusEl.empty();
+    this.statusEl.createEl("span", { cls: "cola-status-dot" });
+    this.statusEl.createEl("span", {
+      cls: "cola-status-text",
+      text: connected ? "\u5728\u7EBF" : "\u79BB\u7EBF"
+    });
+    this.statusEl.title = connected ? "\u5DF2\u8FDE\u63A5" : message ?? "\u672A\u8FDE\u63A5";
     this.statusEl.toggleClass("cola-status-connected", connected);
     this.statusEl.toggleClass("cola-status-disconnected", !connected);
+  }
+  showEmptyState() {
+    const emptyEl = this.chatContainer.createEl("div", { cls: "cola-empty-state" });
+    emptyEl.createEl("div", { cls: "cola-empty-icon", text: "\u{1F4AC}" });
+    emptyEl.createEl("div", { cls: "cola-empty-title", text: "\u548C Cola \u804A\u804A" });
+    const hints = emptyEl.createEl("div", { cls: "cola-empty-hints" });
+    hints.createEl("div", { text: "\u76F4\u63A5\u8F93\u5165\u95EE\u9898\uFF0C\u6216\u9009\u4E2D\u6587\u5B57\u53F3\u952E\u53D1\u9001\u7ED9 Cola" });
+    hints.createEl("div", { text: "\u5F00\u542F\u300C\u9644\u5E26\u6587\u4EF6\u300D\u53EF\u8BA9 Cola \u770B\u5230\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9" });
+  }
+  removeEmptyState() {
+    const el = this.chatContainer.querySelector(".cola-empty-state");
+    if (el) el.remove();
+  }
+  renderSystemMessage(text, type) {
+    const cls = type ? `cola-system-msg cola-system-msg-${type}` : "cola-system-msg";
+    const el = this.chatContainer.createEl("div", { cls });
+    el.createEl("span", { text });
+    this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+  }
+  shouldShowTimeSeparator(prevTimestamp, currentTimestamp) {
+    if (!prevTimestamp || !currentTimestamp) return false;
+    return currentTimestamp - prevTimestamp > 30 * 60 * 1e3;
+  }
+  renderTimeSeparator(timestamp) {
+    const d = new Date(timestamp);
+    const now = /* @__PURE__ */ new Date();
+    let text;
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    if (d.toDateString() === now.toDateString()) {
+      text = hm;
+    } else {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (d.toDateString() === yesterday.toDateString()) {
+        text = `\u6628\u5929 ${hm}`;
+      } else if (d.getFullYear() === now.getFullYear()) {
+        text = `${d.getMonth() + 1}\u6708${d.getDate()}\u65E5 ${hm}`;
+      } else {
+        text = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+      }
+    }
+    this.chatContainer.createEl("div", { cls: "cola-time-separator", text });
   }
   saveMessages() {
     void this.plugin.saveData({ messages: this.messages, settings: this.plugin.settings });
@@ -430,6 +489,13 @@ ${text}`;
         this.messages = data.messages;
         const startIdx = Math.max(0, this.messages.length - PAGE_SIZE);
         for (let i = startIdx; i < this.messages.length; i++) {
+          if (i > startIdx) {
+            const prevTs = this.messages[i - 1].timestamp;
+            const curTs = this.messages[i].timestamp;
+            if (this.shouldShowTimeSeparator(prevTs, curTs)) {
+              this.renderTimeSeparator(curTs);
+            }
+          }
           this.renderMessage(this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
         }
         this.renderedCount = this.messages.length - startIdx;

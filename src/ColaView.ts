@@ -143,7 +143,7 @@ export class ColaView extends ItemView {
 
     const inputWrapper = inputArea.createEl("div", { cls: "cola-input-wrapper" });
     this.inputEl = inputWrapper.createEl("textarea", {
-      attr: { placeholder: "输入消息...", rows: "1" },
+      attr: { placeholder: "问点什么...", rows: "1" },
       cls: "cola-input",
     });
     this.sendBtn = inputWrapper.createEl("button", {
@@ -199,12 +199,24 @@ export class ColaView extends ItemView {
     });
 
     // Listen for connection status
+    let wasConnected = this.plugin.gateway.isConnected;
     this.plugin.gateway.onStatus((connected, message) => {
       this.updateStatus(connected, message);
+      if (!connected && wasConnected) {
+        this.renderSystemMessage("连接已断开，正在重连…", "disconnected");
+      } else if (connected && !wasConnected) {
+        this.renderSystemMessage("已重新连接", "reconnected");
+      }
+      wasConnected = connected;
     });
 
     // Restore saved messages
     await this.loadMessages();
+
+    // Show empty state if no messages
+    if (this.messages.length === 0) {
+      this.showEmptyState();
+    }
   }
 
   async onClose(): Promise<void> {
@@ -306,7 +318,15 @@ export class ColaView extends ItemView {
   }
 
   private addMessage(role: "user" | "assistant", content: string): void {
+    this.removeEmptyState();
     const ts = Date.now();
+    // Check if we need a time separator
+    if (this.messages.length > 0) {
+      const prevTs = this.messages[this.messages.length - 1].timestamp;
+      if (this.shouldShowTimeSeparator(prevTs, ts)) {
+        this.renderTimeSeparator(ts);
+      }
+    }
     this.messages.push({ role, content, timestamp: ts });
     this.renderMessage(role, content, ts);
     this.saveMessages();
@@ -427,7 +447,7 @@ export class ColaView extends ItemView {
       const existing = this.chatContainer.querySelector(".cola-typing");
       if (!existing) {
         const typingEl = this.chatContainer.createEl("div", { cls: "cola-typing" });
-        typingEl.createEl("span", { text: "Cola 正在思考" });
+        typingEl.createEl("span", { text: "思考中" });
         const dots = typingEl.createEl("span", { cls: "cola-typing-dots" });
         dots.createEl("span", { cls: "cola-typing-dot" });
         dots.createEl("span", { cls: "cola-typing-dot" });
@@ -466,15 +486,62 @@ export class ColaView extends ItemView {
   }
 
   private updateStatus(connected: boolean, message?: string): void {
-    if (connected) {
-      this.statusEl.setText("●");
-      this.statusEl.title = "已连接";
-    } else {
-      this.statusEl.setText("○");
-      this.statusEl.title = message ?? "未连接";
-    }
+    this.statusEl.empty();
+    this.statusEl.createEl("span", { cls: "cola-status-dot" });
+    this.statusEl.createEl("span", {
+      cls: "cola-status-text",
+      text: connected ? "在线" : "离线",
+    });
+    this.statusEl.title = connected ? "已连接" : (message ?? "未连接");
     this.statusEl.toggleClass("cola-status-connected", connected);
     this.statusEl.toggleClass("cola-status-disconnected", !connected);
+  }
+
+  private showEmptyState(): void {
+    const emptyEl = this.chatContainer.createEl("div", { cls: "cola-empty-state" });
+    emptyEl.createEl("div", { cls: "cola-empty-icon", text: "💬" });
+    emptyEl.createEl("div", { cls: "cola-empty-title", text: "和 Cola 聊聊" });
+    const hints = emptyEl.createEl("div", { cls: "cola-empty-hints" });
+    hints.createEl("div", { text: "直接输入问题，或选中文字右键发送给 Cola" });
+    hints.createEl("div", { text: "开启「附带文件」可让 Cola 看到当前笔记内容" });
+  }
+
+  private removeEmptyState(): void {
+    const el = this.chatContainer.querySelector(".cola-empty-state");
+    if (el) el.remove();
+  }
+
+  private renderSystemMessage(text: string, type?: "disconnected" | "reconnected"): void {
+    const cls = type ? `cola-system-msg cola-system-msg-${type}` : "cola-system-msg";
+    const el = this.chatContainer.createEl("div", { cls });
+    el.createEl("span", { text });
+    this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+  }
+
+  private shouldShowTimeSeparator(prevTimestamp: number, currentTimestamp: number): boolean {
+    if (!prevTimestamp || !currentTimestamp) return false;
+    return (currentTimestamp - prevTimestamp) > 30 * 60 * 1000; // 30 minutes
+  }
+
+  private renderTimeSeparator(timestamp: number): void {
+    const d = new Date(timestamp);
+    const now = new Date();
+    let text: string;
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    if (d.toDateString() === now.toDateString()) {
+      text = hm;
+    } else {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (d.toDateString() === yesterday.toDateString()) {
+        text = `昨天 ${hm}`;
+      } else if (d.getFullYear() === now.getFullYear()) {
+        text = `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+      } else {
+        text = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+      }
+    }
+    this.chatContainer.createEl("div", { cls: "cola-time-separator", text });
   }
 
   private saveMessages(): void {
@@ -489,6 +556,14 @@ export class ColaView extends ItemView {
         // Render only the last PAGE_SIZE messages
         const startIdx = Math.max(0, this.messages.length - PAGE_SIZE);
         for (let i = startIdx; i < this.messages.length; i++) {
+          // Time separator
+          if (i > startIdx) {
+            const prevTs = this.messages[i - 1].timestamp;
+            const curTs = this.messages[i].timestamp;
+            if (this.shouldShowTimeSeparator(prevTs, curTs)) {
+              this.renderTimeSeparator(curTs);
+            }
+          }
           this.renderMessage(this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
         }
         this.renderedCount = this.messages.length - startIdx;
