@@ -512,8 +512,8 @@ ${text}`;
     const loadCount = Math.min(PAGE_SIZE, totalUnrendered);
     const startIdx = totalUnrendered - loadCount;
     const prevHeight = this.chatContainer.scrollHeight;
-    const fragment = document.createDocumentFragment();
-    const tempContainer = document.createElement("div");
+    const fragment = activeDocument.createDocumentFragment();
+    const tempContainer = activeDocument.createElement("div");
     for (let i = startIdx; i < startIdx + loadCount; i++) {
       this.renderMessageToContainer(tempContainer, this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
     }
@@ -651,8 +651,8 @@ ${text}`;
     const renderedStartIdx = this.messages.length - this.renderedCount;
     if (msgIndex >= renderedStartIdx) return;
     const newStart = Math.max(0, msgIndex - 10);
-    const fragment = document.createDocumentFragment();
-    const tempContainer = document.createElement("div");
+    const fragment = activeDocument.createDocumentFragment();
+    const tempContainer = activeDocument.createElement("div");
     for (let i = newStart; i < renderedStartIdx; i++) {
       this.renderMessageToContainer(tempContainer, this.messages[i].role, this.messages[i].content, this.messages[i].timestamp);
     }
